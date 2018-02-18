@@ -11,13 +11,40 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+//	"github.com/aws/aws-sdk-go/aws"
 )
 
-func main() {
-	svc := ec2.New(session.New())
+type TransitionState int
+
+const (
+	transitioning TransitionState = iota
+    stuck
+    unstuck
+)
+
+const(
+	stuckAfterTolerance = 5 // TODO: make this a command line param.
+)
+
+func getVolumes() ([]*ec2.Volume, error) {
+	sess, err := session.NewSession()
+	svc := ec2.New(sess)
+/*	input := &ec2.DescribeVolumesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name: aws.String("attachment.status"),
+				Values: []*string{
+					aws.String("attached"),
+					aws.String("detached"),
+				},
+			},
+		},
+	}
+*/
+
 	input := &ec2.DescribeVolumesInput{}
 
-	result, err := svc.DescribeVolumes(input)
+	results, err := svc.DescribeVolumes(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
@@ -29,10 +56,73 @@ func main() {
 			// Message from an error.
 			fmt.Println(err.Error())
 		}
-		return
+		return nil, err
 	}
 
-	fmt.Println(result)
+	return results.Volumes, nil
+}
+
+type VolumeStore struct {
+state TransitionState
+volume *ec2.Volume
+stuck_after time.Time
+}
+
+type AttachmentState string
+
+const (
+	attaching AttachmentState = "attaching"
+	detaching AttachmentState = "detaching"
+	attached AttachmentState = "attached"
+	detached AttachmentState = "detached"
+)
+
+func translateAttachmentState(volume *ec2.Volume) AttachmentState {
+	attachment_states := map[string]int {}
+
+	for _, attachment := range volume.Attachments {
+		attachment_states[*attachment.State] += 1
+	}
+
+	if _, present := attachment_states["attaching"]; present {
+		return attaching
+	}
+
+	if _, present := attachment_states["detaching"]; present {
+		return detaching
+	}
+
+	if _, present := attachment_states["attached"]; present {
+		return attached
+	}
+
+	// default to detached. This will handle the nil case as well.
+	return detached
+}
+
+func main() {
+	volume_states := map[string]VolumeStore {}
+
+	volumes, _ := getVolumes()
+
+    for ix, volume := range volumes {
+		vol_uri := generateVolumeUri(volume)
+
+		v := VolumeStore {
+			state: transitioning,
+			volume: volume,
+			stuck_after: time.Now().Add(time.Duration(stuckAfterTolerance) * time.Second),
+		}
+
+		volume_states[vol_uri] = v
+
+		fmt.Printf("%d: %s: %s: %s\n", ix, *volume.VolumeId, translateAttachmentState(volume), vol_uri)
+		fmt.Println(v.stuck_after.Format(time.ANSIC))
+    }
+
+
+
+	//fmt.Println(results)
 
 //	sess  := session.Must(session.NewSession())
 
@@ -64,6 +154,13 @@ func main() {
 
 	select {}
 }
+
+
+func generateVolumeUri(vol *ec2.Volume) string {
+	//return fmt.Sprintf("aws://%s/%s", "us-east-1c", "vol-11fde6b3")
+	return fmt.Sprintf("aws://%s/%s", *vol.AvailabilityZone, *vol.VolumeId)
+}
+
 
 func handleHealthz(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "ok")
