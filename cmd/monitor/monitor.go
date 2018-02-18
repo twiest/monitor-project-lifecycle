@@ -100,10 +100,25 @@ func translateAttachmentState(volume *ec2.Volume) AttachmentState {
 	return detached
 }
 
+func getVolumesInTransitionAttachmentState(volumes []*ec2.Volume) []*ec2.Volume {
+	retval := []*ec2.Volume {}
+
+	for _, volume := range volumes {
+		attachment_state := translateAttachmentState(volume)
+
+		if attachment_state == detaching || attachment_state == attaching {
+			retval = append(retval, volume)
+		}
+	}
+
+	return retval
+}
+
 func main() {
 	volume_states := map[string]VolumeStore {}
 
 	volumes, _ := getVolumes()
+	volumes = getVolumesInTransitionAttachmentState(volumes)
 
     for ix, volume := range volumes {
 		vol_uri := generateVolumeUri(volume)
