@@ -8,9 +8,40 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 )
 
 func main() {
+	svc := ec2.New(session.New())
+	input := &ec2.DescribeVolumesInput{}
+
+	result, err := svc.DescribeVolumes(input)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			default:
+				fmt.Println(aerr.Error())
+			}
+		} else {
+			// Print the error, cast err to awserr.Error to get the Code and
+			// Message from an error.
+			fmt.Println(err.Error())
+		}
+		return
+	}
+
+	fmt.Println(result)
+
+//	sess  := session.Must(session.NewSession())
+
+//	if sess == nil {
+//		panic("unable to load SDK config")
+//	}
+
+
+
 	addr := flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
 	flag.Parse()
 
