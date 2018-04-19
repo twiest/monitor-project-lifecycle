@@ -9,7 +9,8 @@ The purpose of this document is to describe the workflow that will be used to mo
    The project name will be passed into the monitor-project-lifecycle app. This means that monitor-project-lifecycle will NOT generate a unique ID for the project name.
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    export project="os-monitor-project-lifecycle"
    ```
 
@@ -20,7 +21,8 @@ The purpose of this document is to describe the workflow that will be used to mo
    The first thing monitor-project-lifecycle will do is to check to see if a project it will create the app in exists. If it does, then it will delete it. Because of this, it is expected that monitor-project-lifecycle app will be run a single time with the same project name.
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc get project "$project" &> /dev/null && oc delete project "$project"
    ```
 
@@ -33,7 +35,8 @@ The purpose of this document is to describe the workflow that will be used to mo
    Once the garbage from possible previous runs has been collected, we create a new clean project in which the monitored application will be deployed.
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc new-project "$project"
    ```
 
@@ -42,14 +45,16 @@ The purpose of this document is to describe the workflow that will be used to mo
    The application that will be built and deployed in order to gather metrics will come from one of the saved templates in the cluster. For these steps, the `django-psql-persistent` template was chosen. Any template may be chosen, but the specific resources deployed by the template (dc name, bc name, svc name, etc) MUST be specified.
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc new-app django-psql-persistent -n "$project"
    ```
 
 1. Check on the status of the project (includes status of the deployments):
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc status -n "$project"
    ```
 
@@ -58,7 +63,8 @@ The purpose of this document is to describe the workflow that will be used to mo
    Note: "Push successful" is the last line output in the build logs.
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc logs -f bc/django-psql-persistent -n "$project"
    ```
 
@@ -67,21 +73,23 @@ The purpose of this document is to describe the workflow that will be used to mo
    Not sure if this is worthwhile, but might be a good check.
    Note: this log is of the active container, so the logs are never "finished" and thus we don't use the `-f` option.
 
-
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc logs dc/django-psql-persistent -n "$project"
    ```
 
 1. Check that the DC thinks it's currently rolled out:
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc get dc -n "$project" django-psql-persistent
    ```
 
    Note: Output Looks like this:
-   ```
+
+   ```raw
    NAME                     REVISION   DESIRED   CURRENT   TRIGGERED BY
    django-psql-persistent   1          1         1         config,image(django-psql-persistent:latest)
    ```
@@ -89,14 +97,16 @@ The purpose of this document is to describe the workflow that will be used to mo
 1. Check that the service has been created:
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc get svc -n "$project" django-psql-persistent
    ```
 
 1. Check that the cluster DNS for the service has been setup:
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    dig @127.0.0.1 -p 8053 django-psql-persistent.${project}.svc.cluster.local
    ```
 
@@ -107,21 +117,24 @@ The purpose of this document is to describe the workflow that will be used to mo
    NOTE: this doesn't work with cluster up and curl on the host because the host doesn't have access to the cluster DNS or the cluster SDN.
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc rsh -n "$project" dc/postgresql curl http://django-psql-persistent:8080/health
    ```
 
 1. Make sure the route has been created:
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    oc get route -n "$project" django-psql-persistent
    ```
 
 1. Get the route's DNS:
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    route_dns=$(oc get route -n "$project" --template="{{ .spec.host }}" django-psql-persistent)
    ```
 
@@ -130,12 +143,12 @@ The purpose of this document is to describe the workflow that will be used to mo
    Check the liveness check using the route's dns. Returns a string "0" if healthy
 
    Rough CLI equivalent:
-   ```
+
+   ```bash
    curl http://${route_dns}/health
    ```
 
    NOTE: this doesn't currently work with cluster up and curl on my host. It just hangs. More work needs to be done.
-
 
 1. Open Questions:
    * Should we cleanup the project on both the start of the loop and the end of the loop?
